@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <form class="form-box" action="signup.php" method="POST">
+            <h2>Sign Up</h2>
+            <div class="input-box">
+                <span class="icon">👤</span>
+                <input type="text" name="username" placeholder="Enter Username" required>
+            </div>
+            <div class="input-box">
+                <span class="icon">📧</span>
+                <input type="email" name="email" placeholder="Enter Email" required>
+            </div>
+            <div class="input-box">
+                <span class="icon">🔒</span>
+                <input type="password" name="password" placeholder="Enter Password" required>
+            </div>
+            <button type="submit" class="btn">Sign Up</button>
+            <p class="switch-link">Already have an account? <a href="login.html">Login</a></p>
+        </form>
+    </div>
+</body>
+</html>
