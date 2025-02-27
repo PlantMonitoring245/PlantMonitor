@@ -1,218 +1,183 @@
+<?php
+session_start();
+if (!isset($_SESSION["user_id"])) {
+    header("Location: login.php");
+    exit();
+}
+
+include("db_connect.php");
+
+// Database Connection
+$servername = "localhost";
+$username = "root";
+$password = "";
+$database = "plant_monitor_db";
+
+$conn = new mysqli($servername, $username, $password, $database);
+
+// Check connection
+if ($conn->connect_error) {
+    die(json_encode(["error" => "Database connection failed!"]));
+}
+
+// Fetch latest sensor data
+$sql = "SELECT * FROM sensor_data ORDER BY id DESC LIMIT 1";
+$result = $conn->query($sql);
+$data = $result->fetch_assoc() ?: ["moisture" => "0", "temperature" => "0", "humidity" => "0", "motion" => "0", "light_intensity" => "0"];
+$conn->close();
+
+// Handle AJAX Request
+if (isset($_GET['ajax'])) {
+    echo json_encode($data);
+    exit;
+}
+
+// Handle Pump Control
+if (isset($_GET['pump'])) {
+    $pumpState = $_GET['pump']; // 1 for ON, 0 for OFF
+    file_put_contents("pump_status.txt", $pumpState);
+    echo json_encode(["pump" => $pumpState]);
+    exit;
+}
+
+// Get Pump Status
+$pumpStatus = file_exists("pump_status.txt") ? file_get_contents("pump_status.txt") : "0";
+?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Plant Monitoring Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <script src="https://kit.fontawesome.com/a076d05399.js"></script>
     <style>
-        body {
-            font-family: 'Arial', sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #f4f7f6;
-            color: #333;
-        }
-
-        header {
-            background: linear-gradient(135deg, #4CAF50, #2E7D32);
-            color: white;
-            padding: 15px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
-        }
-
-        .logo-container {
-            display: flex;
-            align-items: center;
-        }
-
-        .logo-container img {
-            width: 45px;
-            height: 45px;
-            margin-right: 12px;
-        }
-
-        .logo-container h1 {
-            font-size: 24px;
-            margin: 0;
-        }
-
-        .auth-buttons {
-            display: flex;
-            gap: 12px;
-        }
-
-        .auth-buttons button {
-            background-color: white;
-            color: #4CAF50;
-            border: 2px solid #4CAF50;
-            padding: 8px 16px;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: bold;
-            transition: 0.3s ease-in-out;
-        }
-
-        .auth-buttons button:hover {
-            background-color: #4CAF50;
-            color: white;
-        }
-
-        main {
-            padding: 20px;
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 20px;
-        }
-
+        body { font-family: 'Poppins', sans-serif; background-color: #eef7f9; }
+        .navbar { background: linear-gradient(to right, #2E7D32, #66BB6A); padding: 15px; }
+        .navbar-brand, .navbar-nav .nav-link { color: white; font-weight: bold; }
+        .container { margin-top: 40px; }
         .card {
-            background-color: white;
-            border-radius: 10px;
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
-            width: 280px;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.1);
             text-align: center;
-            padding: 25px;
-            transition: transform 0.3s ease-in-out;
+            background: white;
+            transition: all 0.3s ease-in-out;
         }
-
-        .card:hover {
-            transform: translateY(-8px);
-        }
-
-        .card h3 {
-            color: #333;
-            font-size: 20px;
-            margin-bottom: 15px;
-        }
-
-        .gauge {
-            position: relative;
-            width: 150px;
-            height: 150px;
-            margin: 20px auto;
-        }
-
-        .gauge .circle {
-            fill: none;
-            stroke-width: 15;
-        }
-
-        .gauge .background {
-            stroke: #ddd;
-        }
-
-        .gauge .foreground {
-            stroke: #4CAF50;
-            stroke-linecap: round;
-            transform: rotate(-90deg);
-            transform-origin: center;
-            transition: stroke-dashoffset 0.5s ease-in-out;
-        }
-
-        .gauge text {
-            font-size: 16px;
-            fill: #333;
-            text-anchor: middle;
-            dominant-baseline: middle;
-        }
-
-        .temperature-display, .humidity-display, .motion-display {
-            font-size: 42px;
-            font-weight: bold;
-            transition: color 0.3s ease-in-out;
-        }
-
-        .temperature-display {
-            color: #ff5722;
-        }
-
-        .humidity-display {
-            color: #2196F3;
-        }
-
-        .motion-display {
-            color: #673AB7;
-        }
-
-        @media screen and (max-width: 768px) {
-            main {
-                flex-direction: column;
-                align-items: center;
-            }
-
-            .card {
-                width: 90%;
-            }
-        }
+        .card:hover { transform: translateY(-5px); }
+        h2 { font-size: 22px; font-weight: bold; }
+        p { font-size: 24px; font-weight: bold; }
+        .motion-active { color: green; font-weight: bold; animation: blink 1s infinite alternate; }
+        .motion-inactive { color: red; font-weight: bold; }
+        @keyframes blink { 0% { opacity: 1; } 100% { opacity: 0.5; } }
+        .alert { display: none; margin-top: 20px; }
+        .sensor-image { width: 80px; height: 80px; margin-top: 10px; }
     </style>
 </head>
 <body>
-    <header>
-        <div class="logo-container">
-            <img src="logo.png" alt="Logo">
-            <h1>Plant Monitoring Dashboard</h1>
+<nav class="navbar navbar-expand-lg">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="#"><i class="fas fa-seedling"></i> Plant Monitoring Dashboard</a>
+        <div class="d-flex">
+            <a href="graph.php" class="btn btn-primary me-2">View Graph</a>
+            <a href="fetch_data.php" class="btn btn-warning me-2">View Table</a> 
+            <a href="logout.php" class="btn btn-danger">Logout</a>
         </div>
-        <div class="auth-buttons">
-            <button onclick="redirectTo('login.html')">Login</button>
-            <button onclick="redirectTo('signup.html')">Sign Up</button>
-        </div>
-    </header>
-    <main>
-        <div class="card">
-            <h3>Soil Moisture</h3>
-            <div class="gauge">
-                <svg width="150" height="150">
-                    <circle class="circle background" cx="75" cy="75" r="60"></circle>
-                    <circle class="circle foreground" cx="75" cy="75" r="60" stroke-dasharray="377" stroke-dashoffset="226" id="moistureGauge"></circle>
-                    <text x="75" y="75" id="moistureText">60%</text>
-                </svg>
+    </div>
+</nav>
+
+<div class="container">
+    <div class="alert alert-danger" id="moistureAlert">
+        ⚠ Soil moisture is low! Pump may be required.
+    </div>
+  
+    <div class="row justify-content-center g-4">
+        <div class="col-md-3">
+            <div class="card">
+                <h2>Soil Moisture</h2>
+                <canvas id="moistureGauge"></canvas>
+                <p id="moistureText"><?php echo $data["moisture"]; ?>%</p>
             </div>
         </div>
-        <div class="card">
-            <h3>Temperature</h3>
-            <p class="temperature-display" id="temperature">25°C</p>
+        <div class="col-md-3">
+            <div class="card">
+                <h2>Temperature</h2>
+                <canvas id="temperatureGauge"></canvas>
+                <p id="temperatureText"><?php echo $data["temperature"]; ?>°C</p>
+            </div>
         </div>
-        <div class="card">
-            <h3>Humidity</h3>
-            <p class="humidity-display" id="humidity">70%</p>
+        <div class="col-md-3">
+            <div class="card">
+                <h2>Humidity</h2>
+                <canvas id="humidityGauge"></canvas>
+                <p id="humidityText"><?php echo $data["humidity"]; ?>%</p>
+            </div>
         </div>
-        <div class="card">
-            <h3>Motion Sensor</h3>
-            <p class="motion-display">Motion Detected: <span id="motion">No</span></p>
+        <div class="col-md-3">
+            <div class="card">
+                <h2>Light Intensity</h2>
+                <canvas id="lightGauge"></canvas>
+                <p id="lightText"><?php echo $data["light_intensity"]; ?>%</p>
+            </div>
         </div>
-    </main>
-    <script>
-        function redirectTo(page) {
-            window.location.href = page;
-        }
+    </div>
 
-        function updateSensorData() {
-            // Simulate random values for sensor readings
-            const moisture = Math.floor(Math.random() * 100);
-            const temperature = (Math.random() * (35 - 20) + 20).toFixed(1);
-            const humidity = Math.floor(Math.random() * (90 - 30) + 30);
-            const motionDetected = Math.random() > 0.5 ? "Yes" : "No";
+    <div class="text-center mt-4">
+        <button class="btn btn-success" id="pumpOn">Turn Pump ON</button>
+        <button class="btn btn-danger" id="pumpOff">Turn Pump OFF</button>
+    </div>
+</div>
 
-            // Update the UI elements
-            document.getElementById('moistureText').textContent = `${moisture}%`;
-            document.getElementById('moistureGauge').style.strokeDashoffset = 377 - (moisture / 100) * 377;
+<script>
+    let charts = {};
 
-            document.getElementById('temperature').textContent = `${temperature}°C`;
-            document.getElementById('humidity').textContent = `${humidity}%`;
-            document.getElementById('motion').textContent = motionDetected;
+    function fetchData() {
+        fetch("index.php?ajax=1")
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById("moistureText").innerText = data.moisture + "%";
+                document.getElementById("temperatureText").innerText = data.temperature + "°C";
+                document.getElementById("humidityText").innerText = data.humidity + "%";
+                document.getElementById("lightText").innerText = data.light_intensity + "%";
 
-            // Color changes based on temperature/humidity
-            document.getElementById('temperature').style.color = temperature > 30 ? "#E53935" : "#FF5722";
-            document.getElementById('humidity').style.color = humidity > 60 ? "#1E88E5" : "#2196F3";
-            document.getElementById('motion').style.color = motionDetected === "Yes" ? "#D32F2F" : "#673AB7";
-        }
+                if (data.moisture < 35) {
+                    document.getElementById("moistureAlert").style.display = "block";
+                } else {
+                    document.getElementById("moistureAlert").style.display = "none";
+                }
 
-        // Update sensor data every 3 seconds
-        setInterval(updateSensorData, 3000);
-    </script>
+                updateGauge("moistureGauge", data.moisture, "#4CAF50");
+                updateGauge("temperatureGauge", data.temperature, "#FF5733");
+                updateGauge("humidityGauge", data.humidity, "#3498db");
+                updateGauge("lightGauge", data.light_intensity, "#f1c40f");
+            })
+            .catch(error => console.error("Error fetching data:", error));
+    }
+
+    function updateGauge(canvasId, value, color) {
+        let ctx = document.getElementById(canvasId).getContext("2d");
+        if (charts[canvasId]) charts[canvasId].destroy();
+        charts[canvasId] = new Chart(ctx, {
+            type: "doughnut",
+            data: {
+                labels: ["Value", "Remaining"],
+                datasets: [{
+                    data: [value, 100 - value],
+                    backgroundColor: [color, "#ddd"]
+                }]
+            },
+            options: { cutout: "70%" }
+        });
+    }
+
+    document.getElementById("pumpOn").addEventListener("click", () => fetch("index.php?pump=1").then(() => alert("Pump Turned ON")));
+    document.getElementById("pumpOff").addEventListener("click", () => fetch("index.php?pump=0").then(() => alert("Pump Turned OFF")));
+
+    setInterval(fetchData, 5000);
+    fetchData();
+</script>
+
 </body>
 </html>
